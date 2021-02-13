@@ -17,6 +17,20 @@
     Retrieves the first 5 app names sorted alphabetically.
 
 .EXAMPLE
+    PS C:\> Get-MCASDiscoveredApp -All -StreamId $streamid | select name
+
+    name
+    ----
+    1ShoppingCart
+    ABC News
+    ACTIVE
+    AIM
+    AT&T
+    ...
+
+    Retrieves all app names
+
+.EXAMPLE
     PS C:\> Get-MCASDiscoveredApp -StreamId $streamid -Category SECURITY | select name,@{N='Total (MB)';E={"{0:N2}" -f ($_.trafficTotalBytes/1MB)}}
 
     name                   Total (MB)
@@ -58,6 +72,11 @@ function Get-MCASDiscoveredApp {
         [ValidateRange(1,100)]
         [ValidateNotNullOrEmpty()]
         [int]$ResultSetSize = 100,
+
+        # Specifies to retrieve all apps that match filters
+        [Parameter(ParameterSetName='List', Mandatory=$false)]
+        [ValidateNotNullOrEmpty()]
+        [Switch]$All,
 
         # Specifies the number of records, from the beginning of the result set, to skip. Set to 0 by default.
         [Parameter(ParameterSetName='List', Mandatory=$false)]
@@ -211,20 +230,21 @@ function Get-MCASDiscoveredApp {
     #endregion ----------------------------FILTERING----------------------------
 
     try {
-        #$response = Invoke-MCASRestMethod -Credential $Credential -Path "/cas/api/discovery/" -Method Post -Body $body #-FilterSet $filterSet
-        $response = Invoke-MCASRestMethod -Credential $Credential -Path "/cas/api/v1/discovery/discovered_apps/" -Method Post -Body $body -FilterSet $filterSet
+        if ($All){
+            $body.limit = 100
+            do{
+                $rawresponse = Invoke-MCASRestMethod -Credential $Credential -Path "/api/v1/discovery/discovered_apps/" -Method Post -Body $body -FilterSet $filterSet
+                $response += $rawresponse.data
+                $body.skip += 100
+            } while ($response.count % 100 -eq 0)
+        }
+        else{
+            $rawresponse = Invoke-MCASRestMethod -Credential $Credential -Path "/api/v1/discovery/discovered_apps/" -Method Post -Body $body -FilterSet $filterSet
+            $response = $rawresponse.data
+        }
     }
     catch {
         throw "Error calling MCAS API. The exception was: $_"
     }
-
-    $response = $response.data
-
-    try {
-        Write-Verbose "Adding alias property to results, if appropriate"
-        $response = $response | Add-Member -MemberType AliasProperty -Name Identity -Value 'appId' -PassThru
-    }
-    catch {}
-
     $response
 }
